@@ -1,0 +1,13 @@
+{
+  "name": "meu-scraper-easypanel",
+  "version": "1.0.0",
+  "description": "Meu script Puppeteer rodando no Easypanel",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.12.1"
+  }
+}
