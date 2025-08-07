@@ -1,70 +1,62 @@
-import puppeteer from 'puppeteer';
-import express from 'express';
-import fs from 'fs';
-
-// Inicializa o servidor Express
+const express = require('express');
+const puppeteer = require('puppeteer');
+const bodyParser = require('body-parser');
 const app = express();
-const PORT = 3000; // A porta que o servidor vai usar dentro do container
+app.use(bodyParser.json());
 
-// Middleware para permitir que o servidor entenda JSON nas requisições
-app.use(express.json());
-
-// Endpoint principal da nossa API: /render
-// O n8n vai enviar os dados para este endereço
 app.post('/render', async (req, res) => {
-  // Pega o array de dados do corpo da requisição enviada pelo n8n
-  const priceData = req.body.data;
+  const { produto, ano, valores } = req.body;
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  // Validação simples
-  if (!priceData || !Array.isArray(priceData)) {
-    return res.status(400).json({ error: 'O formato dos dados é inválido. Envie um JSON com a chave "data" contendo um array.' });
-  }
+  const html = `
+  <html>
+    <head>
+      <meta charset="UTF-8">
+      <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+      <script type="text/javascript">
+        google.charts.load('current', {'packages':['corechart']});
+        google.charts.setOnLoadCallback(drawChart);
 
-  console.log(`Recebido pedido para renderizar gráfico com ${priceData.length} pontos de dados.`);
+        function drawChart() {
+          var data = google.visualization.arrayToDataTable([
+            ['Mês', 'Preço'],
+            ${valores.map((v, i) => `['${meses[i]}', ${v}]`).join(',')}
+          ]);
 
-  try {
-    // 1. Carrega o nosso molde HTML
-    const templateHtml = fs.readFileSync('template.html', 'utf-8');
-    
-    // 2. Converte os dados recebidos para o formato de string que o Google Charts precisa e injeta no molde
-    const chartDataString = JSON.stringify(priceData);
-    const finalHtml = templateHtml.replace('%%DATA%%', chartDataString);
+          var options = {
+            title: '${produto} (${ano})',
+            curveType: 'function',
+            legend: { position: 'bottom' },
+            width: 800,
+            height: 400
+          };
 
-    // 3. Inicia o Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true,
-      executablePath: '/usr/bin/google-chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-    });
-    const page = await browser.newPage();
-    
-    // Define o HTML da página para o nosso molde com os dados injetados
-    await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
-    
-    // Encontra o elemento do gráfico na página
-    const chartElement = await page.$('#chart_div');
-    if (!chartElement) {
-        throw new Error('Elemento do gráfico #chart_div não encontrado na página.');
-    }
+          var chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+          chart.draw(data, options);
+        }
+      </script>
+    </head>
+    <body>
+      <div id="curve_chart" style="width: 800px; height: 400px"></div>
+    </body>
+  </html>
+  `;
 
-    // Tira um "screenshot" apenas da área do gráfico
-    const imageBuffer = await chartElement.screenshot();
-    
-    await browser.close();
+  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#curve_chart');
+  await page.waitForTimeout(1000);
 
-    // 4. Retorna a imagem gerada como resposta para o n8n
-    res.set('Content-Type', 'image/png');
-    res.send(imageBuffer);
-    
-    console.log('Gráfico gerado e enviado com sucesso!');
+  const chartElement = await page.$('#curve_chart');
+  const buffer = await chartElement.screenshot();
 
-  } catch (error) {
-    console.error('Erro ao gerar o gráfico:', error);
-    res.status(500).json({ error: 'Falha ao gerar o gráfico.', details: error.message });
-  }
+  await browser.close();
+
+  res.set('Content-Type', 'image/png');
+  res.send(buffer);
 });
 
-// Inicia o servidor e o deixa "escutando" por pedidos
-app.listen(PORT, () => {
-  console.log(`Serviço "Gerador de Gráficos" rodando e escutando na porta ${PORT}`);
+app.listen(80, () => {
+  console.log('Gerador de Gráficos ativo na porta 80');
 });
