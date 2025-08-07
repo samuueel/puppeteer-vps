@@ -57,6 +57,6 @@ app.post('/render', async (req, res) => {
   res.send(buffer);
 });
 
-app.listen(80, () => {
-  console.log('Gerador de Gráficos ativo na porta 80');
+app.listen(3000, () => {
+  console.log('Gerador de Gráficos ativo na porta 3000');
 });
